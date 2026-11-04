@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "px4-flight-diag"
+version = "0.1.0"
+description = "Read-only PX4 MAVLink capture and offline diagnostics"
+requires-python = ">=3.10"
+dependencies = ["pymavlink==2.4.49", "PyYAML>=6.0,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+px4-flight-diag = "px4_flight_diag.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

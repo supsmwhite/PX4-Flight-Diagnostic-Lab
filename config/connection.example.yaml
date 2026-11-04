@@ -1,0 +1,7 @@
+# Receive only. Configure ESP32 to send to this computer's IP and port.
+bind_host: 0.0.0.0
+bind_port: 14551
+# IPv4 address is a local listen address, NOT the ESP32 address.
+duration_seconds: 20
+drone: drone2
+output_root: data
