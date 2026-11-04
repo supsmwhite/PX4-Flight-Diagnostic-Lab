@@ -1,6 +1,6 @@
 # 数据契约（schema_version = 1）
 
-本文描述当前被动 UDP 采集/重放的数据结构与解释限制。实现入口为 [session.py](../src/px4_flight_diag/storage/session.py)、[parser.py](../src/px4_flight_diag/communication/parser.py)、[normalize.py](../src/px4_flight_diag/timebase/normalize.py) 和 [stats.py](../src/px4_flight_diag/analysis/stats.py)。**未进行实机验证；估计值、设定值和真值必须分开。**
+本文描述当前被动 UDP 采集/重放的数据结构与解释限制。实现入口为 [session.py](../src/px4_flight_diag/storage/session.py)、[parser.py](../src/px4_flight_diag/communication/parser.py)、[normalize.py](../src/px4_flight_diag/timebase/normalize.py) 和 [stats.py](../src/px4_flight_diag/analysis/stats.py)。**已读取用户提供的机2真实地面静止遥测，未进行实机飞行验证；估计值、设定值和真值必须分开。**
 
 ## 1. 会话与原始记录
 
@@ -75,6 +75,21 @@ SYSTEM_TIME 可同时有 unix 与 boot 两个 sources，仍不自动建立同步
 | SYS_STATUS | onboard_control_sensors_present/enabled/health 位域；load 为 0.1%；voltage_battery mV；current_battery cA；battery_remaining %；drop_rate_comm 为 0.01% | 电流 -1、余量 -1 等 sentinel 表示未知；机载 drop_rate_comm 不是本地 UDP 测得丢包率；位域健康仅是机载报告 |
 
 注意：DISTANCE_SENSOR 的 cm 与 OPTICAL_FLOW_RAD 的 m 不能混算；ATTITUDE 的 rad 与界面显示度不能混算；LOCAL_POSITION_NED 的 down 正与“高度向上正”必须显式转换且保留来源。
+
+## V0.2 可视化派生契约（不变更schema 1）
+
+输入仍是原始processed/messages.jsonl，保留原fields/time/recv_utc/recv_monotonic_ns。加载校验逐行JSON/schema/来源/结构，全文件接收单调时间与packet_index非递减（同包相等允许）。损坏记录报路径行号，不静默跳过；metadata和summary缺失警告但可绘图。传感器id/orientation/sensor_id存在时须uint8，缺失作为未知独立流。
+
+- `finite`只接受有限数值，不接受bool、数字字符串或nan/inf字符串。缺失/无效绘图值为None，不回写processed。
+- 实际roll/pitch rad→degree。目标q须4个有限数、范数在[0.9,1.1]内归一化；零/异常范数无效。type_mask缺失或bit128置位时目标姿态缺失，不填零。欧拉奇异点不用于精确跟踪判断。
+- LOCAL_POSITION_NED x/y和vx/vy直接使用，NED North/East，m和m/s，明确EKF2估计不是真值。
+- OPTICAL_FLOW_RAD积分量保持rad，不换成速度；要求quality在1..255且integration_time_us>0。quality图独立于积分窗口，0正常显示为零质量；缺失/越界质量显示缺失。integration_time_us保留µs。
+- DISTANCE_SENSOR min/max/current由cm→m，量程须0≤min≤max<65535，current必须在有效量程内且非65535。量程外current显示缺失，范围参考仍可绘图；不解释v1未传扩展字段的默认值为实测值。
+- series返回x/y、valid_count、invalid_count、gap_count、connectgaps=False；>gap_seconds（默认0.5秒）和时间倒退插入None断线。每条无效字段本身也是断点；不补采样、不插值。
+- auto轴每图验证显式time_boot_ms完整且每类不倒退，使用同来源最早boot字段为原点；否则用同来源首条消息recv_monotonic_ns为原点。未知time_usec不自动提升为boot。receive选项全图使用接收轴；所有接收轴包含传输延迟。不承诺严格同步或重启识别。
+- HEARTBEAT上下文只向后匹配2秒，过期/缺失为未知。未解锁目标可显示但标签为“遥测目标，不等于已执行”，上下文统计不构成模式或控制有效性证明。
+- HTML每来源五组图，状态与执行状态分离。AVAILABLE_WITH_LIMITATIONS要求各必要曲线至少2条有效样本；否则INSUFFICIENT_DATA。不是医学式置信度、故障分类或飞行许可。
+- `reports/diagnostic.html`首次独占创建；后续为diagnostic-001.html等。JS内嵌，无远程脚本，不修改summary/raw/processed。HTML包含元数据和来源信息，分享前需检查隐私；日志和报告默认忽略Git。
 
 ## 5. 未来 uORB 对照：候选映射，不是严格等价
 

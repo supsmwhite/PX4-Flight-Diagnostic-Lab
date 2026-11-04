@@ -73,8 +73,16 @@ def main(argv: list[str] | None = None) -> int:
     replay.add_argument("--drone", default="replay")
     capture = commands.add_parser("capture", help="passive UDP listener")
     capture.add_argument("--config", type=Path, required=True)
+    analyze = commands.add_parser("analyze", help="offline processed Session to standalone HTML; no socket")
+    analyze.add_argument("--session", type=Path, required=True)
+    analyze.add_argument("--time-axis", choices=("auto", "receive"), default="auto")
+    analyze.add_argument("--gap-seconds", type=float, default=0.5)
     args = cli.parse_args(argv)
     try:
+        if args.command == "analyze":
+            from .analysis.report import generate_report
+            print(generate_report(args.session, time_axis=args.time_axis, gap_seconds=args.gap_seconds))
+            return 0
         if args.command == "replay":
             if not args.input.is_file():
                 raise ValueError(f"input file not found: {args.input}")

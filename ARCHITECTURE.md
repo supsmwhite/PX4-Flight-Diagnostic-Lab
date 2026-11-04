@@ -58,7 +58,7 @@ plots/
 reports/summary.json
 ```
 
-`plots/` 当前仅预留，不意味着已经生成图表。输出采用排他创建；原始包在解析前写入并 flush。干净关闭时 raw/processed 文件执行 fsync，但不保证掉电时最后一条记录完整。summary 记录 `completed/interrupted/failed`；失败会尽量保留已接收证据和错误，文件系统失败等仍可能使 summary 不完整。
+`plots/` 当前仅预留；V0.2图表由analyze另外生成到reports/diagnostic*.html。输出采用排他创建；原始包在解析前写入并 flush。干净关闭时 raw/processed 文件执行 fsync，但不保证掉电时最后一条记录完整。summary 记录 `completed/interrupted/failed`；失败会尽量保留已接收证据和错误，文件系统失败等仍可能使 summary 不完整。
 
 重放读取原文件，检查 schema、packet index、接收单调时间、来源结构、UTC 时区、Base64 和长度，再把同一包记录写到新会话 raw 中；保留原接收时间，而非重放执行时间。JSON 排版可能重新序列化，因此这是包记录/载荷的复制，不承诺文件字节级副本。metadata 记录原始输入绝对路径和工具版本。
 
@@ -68,14 +68,26 @@ V0.1 优先需要逐包追加、保留坏数据、可检查的交换格式和离
 
 若后续需要跨会话索引或长时查询，可从原始日志构建可重建数据库索引，而不是让数据库成为唯一原始证据。索引和清洗产物不得反向修改 raw；容量与性能要用实际负载测量。
 
+## V0.2 离线可视化（已实现）
+
+`analyze --session ...` → [telemetry.py](<src/px4_flight_diag/analysis/telemetry.py>) → [report.py](<src/px4_flight_diag/analysis/report.py>) → 独立HTML。读取schema 1 processed记录，不需要raw，不创建socket，不改采集/重放管线。Plotly是唯一新增绘图依赖，JS内嵌报告，不依赖CDN或服务。
+
+- 按 `(peer,SYSID,COMPID)` 分节，每节五组图；测距按ID/方向、光流按sensor_id隔离。未知标识明确显示None，不混入已知传感器。
+- 姿态rad转度，目标四元数[w,x,y,z]校验有限值/范数/忽略位后转欧拉；距离cm转m；速度直接读vx/vy，光流保留积分角量和积分窗口。
+- `auto` 只对图中显式time_boot_ms完整且每种消息无倒退的流使用boot相对时间，原点为该来源最早有效boot字段；其余用来源首个消息的接收单调时间。未知time_usec不推测。可用 `--time-axis receive` 使全图采用一致接收轴；并非毫秒级因果时钟。
+- 默认超过0.5秒间隔断线（可配置），无效字段None、connectgaps=False，无插值。重新生成独占创建 diagnostic.html、diagnostic-001.html等，原报告不覆盖。
+- 每条目标结合此前最多2秒内心跳统计上下文：未解锁/过期/模式未确认不能解释为有效飞行控制。有效目标仍仅标“遥测目标”，不声称执行。
+- 图表状态 `AVAILABLE_WITH_LIMITATIONS` 只表示必需曲线各至少两条有效样本；否则 `INSUFFICIENT_DATA` 并说明缺口。该状态不改变V0.1执行状态、summary或schema，也不是自动根因诊断。
+- 会话CRC/错误按processed重新统计，消息数量/接收频率/最大间隔按来源分开；无法归属SYSID的CRC仅会话级展示，错误不阻止绘图。
+
+当前整体读入内存，无抽稀或大规模资源配额；图表缺消息正常降级，结构损坏明确报路径行号而非静默跳过。未实现严格重启分段、时钟漂移修正、跨机对照或飞行模式真值验证。
+
 ### 未来整合位置（尚未实现）
 
 - **pyulog（按需可选）**：仅在 MAVLink 证据缺口明确且 ULog 有望补足时，再新增离线 ULog importer，将 uORB 原值、实例、固件版本和源时间保留到独立记录模型，进入显式时间域/重启分段与对照分析。不是每次实验必经步骤；不把 ULog 填成伪 UDP 包，也不假设 MAVLink 与 uORB 严格等价。
 - **外部视频时间对齐（按需可选）**：未来保存视频原始时间轴、可核查同步事件、偏移/漂移及误差估计，再与遥测对照；目前不接入视频、不实现自动同步或多源融合。
 - **FastAPI**：作为只读会话/摘要查询服务包在存储与分析输出之上，不在采集器内嵌控制路由；优先绑定 localhost，授权/路径访问/敏感日志另做审查。不得通过 HTTP API 绕回飞控发送。
-- **Plotly**：消费 processed/analysis 派生结果，输出 plots 下的离线图或由只读服务展示；图上标注单位、坐标、时间域、缺测和来源。绘图不更改 raw，也不能把相似曲线变成根因证明。
-
-这些组件未加入当前运行管线；引入前分别定义数据兼容、资源边界与独立验证。
+上述ULog、视频与FastAPI组件未加入当前运行管线；引入前分别定义数据兼容、资源边界与独立验证。Plotly离线HTML已由V0.2实现，不属于待实现项。
 
 ## 配置和操作边界
 
@@ -91,4 +103,4 @@ capture YAML 恰好包含 `bind_host`、`bind_port`、`duration_seconds`、`dron
 - 多帧在一个 UDP 包中完成时可具有相同接收时间；分片帧归于完成解析的包。这是接收观测，不等于消息生产周期。
 - 序号重复/乱序/回绕/重启、过滤与传输丢失可能混淆。summary 的结论必须保持“无法判断故障根因”。
 
-更多字段见 [数据契约](docs/DATA_CONTRACT.md)，验证设计见 [实验规范](docs/EXPERIMENTS.md)。未来自定义 dialect、ULog、时钟对齐、可视化和诊断规则必须另立范围及测试，不能通过文档描述冒充已实现功能。
+更多字段见 [数据契约](docs/DATA_CONTRACT.md)，验证设计见 [实验规范](docs/EXPERIMENTS.md)。未来自定义 dialect、ULog、严格时钟对齐、实时可视化和诊断规则必须另立范围及测试，不能通过文档描述冒充已实现功能。

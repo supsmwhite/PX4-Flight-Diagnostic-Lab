@@ -128,7 +128,7 @@ def test_config_validation(tmp_path):
 def test_module_entry():
     result = subprocess.run([sys.executable, "-m", "px4_flight_diag", "--version"], capture_output=True, text=True)
     assert result.returncode == 0
-    assert result.stdout.strip() == "0.1.0"
+    assert result.stdout.strip() == "0.2.0"
 
 
 def test_capture_cli_loopback(tmp_path):
