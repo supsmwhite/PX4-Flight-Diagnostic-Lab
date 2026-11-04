@@ -71,6 +71,7 @@ env -u PYTHONPATH .venv/bin/px4-flight-diag --help
 
 ## 最近相关 Git 提交信息
 
-- 首次公开发布准备：仓库 `supsmwhite/PX4-Flight-Diagnostic-Lab`，分支 `main`，首次提交消息 `chore: initial commit`。最终远端状态须以 GitHub/Git 查询为准。
+- 2026-11-04 已创建并首次推送公开仓库：https://github.com/supsmwhite/PX4-Flight-Diagnostic-Lab ，分支 `main`，首次提交 `773471a`（`chore: initial commit`）；origin 已绑定。
+- 发布前重新运行全套测试：26 passed in 1.22s；暂存文件 `git diff --cached --check` 通过。
 - 已检查26个待提交文件，无超过50MiB文件；常见敏感信息扫描未发现密钥，README本机绝对路径已替换为通用克隆步骤。
 - 原始数据、.venv、本地连接配置、GITHUB_INIT.md、.env及密钥文件已被忽略。提交身份使用本仓库级GitHub noreply邮箱，未改全局身份。
