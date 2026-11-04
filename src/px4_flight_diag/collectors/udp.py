@@ -9,14 +9,15 @@ from typing import Callable, Iterator
 
 
 def receive_packets(bind_host: str, bind_port: int, duration: float,
-                    ready: Callable[[tuple], None] | None = None) -> Iterator[dict]:
+                    ready: Callable[[tuple], None] | None = None,
+                    stop: Callable[[], bool] | None = None) -> Iterator[dict]:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind((bind_host, bind_port))
         if ready:
             ready(sock.getsockname())
         end = time.monotonic() + duration
         index = 0
-        while (remaining := end - time.monotonic()) > 0:
+        while (remaining := end - time.monotonic()) > 0 and not (stop and stop()):
             sock.settimeout(min(0.25, remaining))
             try:
                 data, peer = sock.recvfrom(65535)

@@ -82,12 +82,25 @@ V0.1 优先需要逐包追加、保留坏数据、可检查的交换格式和离
 
 当前整体读入内存，无抽稀或大规模资源配额；图表缺消息正常降级，结构损坏明确报路径行号而非静默跳过。未实现严格重启分段、时钟漂移修正、跨机对照或飞行模式真值验证。
 
+## V0.2+ 实时Web闭环
+
+`receive_packets`单生产者 → `process`先packet落盘 → Parser → record落盘 → Stats → 可选observer → LiveBuffer → 有界snapshot → WebSocket → Plotly增量曲线。旧capture/replay无observer时行为及schema保持。receive_packets增加可选stop回调，每次阻塞最多0.25秒；process观察器异常计数，不影响后续存档，结束后live明确ERROR。
+
+[server.py](<src/px4_flight_diag/live/server.py>)以独立非daemon生产线程执行采集，FastAPI生命周期启动/停止并join，客户端不拥有生产者。时长结束生产者退出，Web保持最后曲线；Ctrl+C关闭服务。无浏览器控制端点。
+
+[core.py](<src/px4_flight_diag/live/core.py>)复用Stats及telemetry.field_value，与离线series完全相同的单位/无效值语义。锁保护有界内存，不在锁内执行磁盘/网络。默认64来源、512消息流、20000点，60秒执行及证据接收时间窗口，完成后冻结末窗。快照最多2000点，滞后客户端直接取得最新批次并计client_missed；每WS独立游标，最多4客户端、1秒发送超时。限额仅显示层，不修改原始存档。原采集Parser/Stats的全来源配额风险仍保留，不声称恶意流量安全。
+
+live历史回放读取原raw并复用同一个Parser，保留CRC/分片/接收时间，不另存或修改历史。按recv_monotonic_ns相对间隔/speed、可中断Event.wait调度；回放生产者无socket，Web本机socket例外需显式说明，与原无网络replay区别。前后端消息协议与真实采集共用。
+
+FastAPI固定127.0.0.1，只提供/、/app.js、/plotly.min.js、/ws。无文件路径查询、无写接口、限制Host/WS Origin与客户端数，未提供认证或TLS，不授权局域网暴露。Plotly本机提供；前端5Hz合并extendTraces，必要窗口裁剪react，不重新生成HTML。来源选择和sensor隔离、60秒/128trace/12000点限制、超时/断线/重连/完成提示。
+
+状态分为整体有效遥测、任意UDP包链路、HEARTBEAT与各消息流，独立计龄。阈值是显示策略而非协议保证，更不是飞控状态真值。历史回放age按实际播放时钟，frequency/目标上下文按历史接收时钟；慢速回放可能出现STALE，不能当真实原始链路故障。
+
 ### 未来整合位置（尚未实现）
 
 - **pyulog（按需可选）**：仅在 MAVLink 证据缺口明确且 ULog 有望补足时，再新增离线 ULog importer，将 uORB 原值、实例、固件版本和源时间保留到独立记录模型，进入显式时间域/重启分段与对照分析。不是每次实验必经步骤；不把 ULog 填成伪 UDP 包，也不假设 MAVLink 与 uORB 严格等价。
 - **外部视频时间对齐（按需可选）**：未来保存视频原始时间轴、可核查同步事件、偏移/漂移及误差估计，再与遥测对照；目前不接入视频、不实现自动同步或多源融合。
-- **FastAPI**：作为只读会话/摘要查询服务包在存储与分析输出之上，不在采集器内嵌控制路由；优先绑定 localhost，授权/路径访问/敏感日志另做审查。不得通过 HTTP API 绕回飞控发送。
-上述ULog、视频与FastAPI组件未加入当前运行管线；引入前分别定义数据兼容、资源边界与独立验证。Plotly离线HTML已由V0.2实现，不属于待实现项。
+上述ULog与视频组件未加入当前运行管线。Plotly离线HTML已由V0.2实现，FastAPI只读实时服务已由V0.2+实现。
 
 ## 配置和操作边界
 

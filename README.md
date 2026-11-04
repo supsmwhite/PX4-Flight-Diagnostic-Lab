@@ -1,6 +1,6 @@
 # PX4 Flight Diagnostic Lab
 
-只读采集、保存、重放和离线可视化 PX4 MAVLink 遥测的 Python 诊断实验室（V0.2）。
+只读采集、保存、重放、离线报告与实时Web可视化 PX4 MAVLink 遥测的 Python 诊断实验室（V0.2+）。
 
 ## 背景与边界
 
@@ -59,6 +59,29 @@ xdg-open data/drone2/<session>/reports/diagnostic.html
 默认 `auto` 按图检查显式 `time_boot_ms` 是否齐全且各消息类型内无倒退，满足则用相同来源的飞控启动相对时间；光流等未知 `time_usec` 使用电脑单调接收相对时间。不同时间基准的图不能直接毫秒级比较；需要一致横轴时用 `--time-axis receive`，仍含链路传输延迟。不会猜测时钟偏移或隐藏重启。
 
 超过0.5秒（可配置）的间隔、无效值、忽略掩码和时间回退会断线；不插值、不填零。报告含11类消息计数/频率/最大间隔和会话级CRC警告，CRC不阻止绘图。接收频率不是源采样率，估计位置不是真值，图表不是根因诊断。读取损坏JSON/结构时报告文件行号，不悄悄跳过。
+
+## V0.2+ 实时Web（先用历史回放验收）
+
+```bash
+env -u PYTHONPATH .venv/bin/python -m pip install -e '.[dev]'
+# 不开飞控UDP端口、不发送数据、不改历史Session；原始接收间隔/速度倍率调度
+# 需要Session中的raw/udp.jsonl，复用现有Parser处理CRC及分片
+python -m px4_flight_diag live --replay-session data/drone2/<session> --speed 1 --start-delay 5
+# 浏览器访问 http://127.0.0.1:8765
+
+# 仅在现场人员授权、无桨且上锁后，进行真实ESP32被动采集
+python -m px4_flight_diag live --config config/connection.yaml --web-port 8765
+```
+
+Web固定只绑定127.0.0.1，UDP仍按原连接配置监听，两端口必须不同。未提供任意路径HTTP接口、飞控控制或公网功能；HTML/Plotly脚本都由本机提供，无CDN。**回放生产者不创建socket；实时回放的浏览器服务需要本机HTTP/WebSocket socket**，原replay命令仍完全无网络。
+
+采集时长到达后停止记录、保存摘要并显示COMPLETED；服务继续保留末段曲线直到Ctrl+C。浏览器关闭不停止采集；Ctrl+C关闭线程/文件/WebSocket。回放速度仅改变调度，不改变历史时间戳、频率统计和目标心跳上下文。新采集Session可照常使用analyze。
+
+页面约5Hz增量更新五组图，默认最近60秒，坐标为电脑接收相对秒（包含链路延迟），不猜time_usec或做时钟对齐。来源可选择，传感器独立曲线；过期数据标为历史，断线自动重连。状态WAITING_FOR_DATA/RECEIVING/STALE/DISCONNECTED/COMPLETED/ERROR仅界面观测，不是飞控failsafe或解锁真值。整体无有效消息2秒标STALE，无任意包5秒标DISCONNECTED；HEARTBEAT及各类消息独立计算2秒新鲜度。
+
+显示层最多20000点/64来源/512消息流，每客户端快照最多2000点，最多4个WS客户端，发送超时1秒；慢客户端跳过旧更新并显示client_missed，容量/来源限额记display_dropped。正常60秒窗口到期不算显示丢弃。前端最多128曲线、每曲线12000点；这不是原始存档丢包数。采集保存先于显示通知，网页与磁盘记录解耦；显示观察器异常计入摘要，不因此中断存档。
+
+新增依赖FastAPI（只读路由/WS）、Uvicorn（本机ASGI服务）、websockets（WS协议）；httpx仅用于测试。没有MAVSDK或控制SDK。当前只完成纯软件与真实历史日志回放验收，**未完成本轮真实在线ESP32地面验收**。
 
 ## UDP 采集
 
@@ -139,6 +162,6 @@ PX4-Flight-Diagnostic-Lab/
 
 实际测试记录见 [PROGRESS.md](<PROGRESS.md>)。已验证合成数据、本机 UDP 回环及用户本地机2约20秒真实静止ESP32日志的离线可视化。没有真实 ULog 或实机飞行验证；本地Session默认不进入Git，其他环境需要自行提供数据路径。
 
-未实现 ULog 导入/严格时钟对齐、Web/实时曲线、双机对照、EKF2/动力专项诊断、自定义 dialect、签名认证。高负载同步写盘可能导致内核队列丢包，当前不测 OS drop 计数；来源/流数量没有全局配额，应仅用于受控网络。无法判定测试机2横移根因。
+V0.2+已实现本机Web实时曲线；未实现 ULog 导入/严格时钟对齐、双机对照、EKF2/动力专项诊断、自定义 dialect、签名认证。高负载同步写盘可能导致内核队列丢包，当前不测 OS drop 计数；来源/流数量没有全局配额，应仅用于受控网络。无法判定测试机2横移根因。
 
 参考 [原项目](https://github.com/supsmwhite/px4-optical-flow-gcs) 的通信与记录设计后独立实现，未修改或复制整套地面站；详细区别见 [参考研究](<docs/REFERENCE_REVIEW.md>)。后续建议：实机被动链路验证、ULog与遥测时钟分段对照、双机同条件可追溯可视化。

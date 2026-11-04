@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PX4 · 只读实时遥测</title>
+<style>
+:root{font:15px system-ui,sans-serif;color:#192c42;background:#f2f5f9;color-scheme:light}body{max-width:1500px;margin:auto;padding:22px}h1{font-size:25px;margin-bottom:8px}h2{font-size:18px}.notice,.panel{background:white;border:1px solid #d4deea;border-radius:9px;padding:15px;margin:14px 0}.notice{border-left:5px solid #d19524;background:#fff9eb}.status{font-weight:700;font-size:18px}.metrics{display:flex;flex-wrap:wrap;gap:12px 26px}.metrics span{overflow-wrap:anywhere}label{font-weight:600}select{max-width:100%;padding:8px;margin:8px;border:1px solid #a9bbd0;border-radius:5px;background:white}.table-wrap{overflow:auto;max-height:320px}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:8px;border-bottom:1px solid #dce3ed;text-align:left;white-space:nowrap}th{background:#eef3f9;position:sticky;top:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}#error{color:#a12626}#connection[data-connected="false"]{color:#a12626}.plot{height:370px}.plot.flow{height:620px}.plot.attitude{height:460px}.plot-status{color:#77511c}.subtle{color:#526477;font-size:13px}.plots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.plots .panel{margin:0;min-width:0}.wide{grid-column:1/-1}@media(max-width:950px){.plots{display:block}.plots .panel{margin:14px 0}body{padding:12px}}
+</style>
+<script src="/plotly.min.js" defer></script>
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header><h1>PX4 Flight Diagnostic Lab · 实时遥测</h1><p>只读监视 · MAVLink-first · 不向飞控发送任何控制、心跳或请求</p></header>
+<div class="notice">估计器输出不是真值；目标消息不等于控制已执行。CRC 通过不是身份认证；显示丢弃不是实测链路丢包率。根因判断：INSUFFICIENT_DATA。</div>
+<section class="panel" aria-label="会话状态">
+<div class="metrics"><span id="connection" data-connected="false">浏览器未连接</span><span id="state" class="status">WAITING_FOR_DATA</span></div>
+<p id="session">Session：未知</p><div class="metrics"><span id="mode">模式：未知</span><span id="messages">消息：0</span><span id="crc">CRC候选错误：0</span><span id="dropped">显示丢弃：0</span></div>
+<p id="ages">数据 age：未知 · 消息 age：未知</p><p id="updated">最后快照：尚未收到</p><pre id="error" role="alert"></pre>
+<label for="identity">来源（host / port / SYSID / COMPID）</label><select id="identity"><option value="">暂无来源</option></select>
+<p id="heartbeat">HEARTBEAT：未知</p><pre id="target-context">目标上下文：未知；仅遥测，不等于执行</pre>
+<div class="table-wrap"><table><thead><tr><th>消息流</th><th>数量</th><th>接收 Hz</th><th>最大间隔 s</th><th>age s</th><th>状态</th></tr></thead><tbody id="streams"></tbody></table></div>
+<p class="subtle">各流独立显示新鲜度，session RECEIVING 不代表每条曲线有效。断线后保留历史，不把旧值视为正常；采集结束保留末 60 秒。</p>
+</section>
+<p>时间轴：电脑单调接收相对时间（秒），包含链路延迟，非飞控时钟，不支持毫秒级因果判断。窗口 60 s；间隔 &gt; 0.5 s 或无效值断线、不插值。每条曲线最多 12,000 点，最多 128 条曲线。</p>
+<div class="plots">
+<section class="panel wide"><h2>1 · 实际与遥测目标姿态（°）</h2><p id="status-attitude" class="plot-status">INSUFFICIENT_DATA</p><div id="plot-attitude" class="plot attitude"></div></section>
+<section class="panel"><h2>2 · 水平位置 NED（m）</h2><p class="subtle">X North / Y East；估计位置不是独立真值。</p><p id="status-position" class="plot-status">INSUFFICIENT_DATA</p><div id="plot-position" class="plot"></div></section>
+<section class="panel"><h2>3 · 水平速度 NED（m/s）</h2><p class="subtle">直接使用消息估计，不由位置差分。</p><p id="status-velocity" class="plot-status">INSUFFICIENT_DATA</p><div id="plot-velocity" class="plot"></div></section>
+<section class="panel wide"><h2>4 · 光流积分量 / 质量 / 积分时间</h2><p class="subtle">按 sensor ID 隔离；积分角量不是水平速度，三个独立纵轴。</p><p id="status-flow" class="plot-status">INSUFFICIENT_DATA</p><div id="plot-flow" class="plot flow"></div></section>
+<section class="panel wide"><h2>5 · 测距（m）</h2><p class="subtle">按 ID 与 orientation 隔离；沿传感器方向，不自动等同离地高度。</p><p id="status-distance" class="plot-status">INSUFFICIENT_DATA</p><div id="plot-distance" class="plot"></div></section>
+</div>
+<footer class="subtle"><p>所有单位与有效性由服务端 telemetry 层解释；浏览器只绘制已转换 values。优先补充 MAVLink 缺失字段，ULog 按需。默认本机部署，同源 WebSocket，无外部 CDN。</p></footer>
+</body>
+</html>

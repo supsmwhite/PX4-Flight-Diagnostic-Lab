@@ -35,16 +35,29 @@ def load_config(path: Path) -> dict:
     return config
 
 
-def process(packets: Iterable[dict], session: Session) -> dict:
+def process(packets: Iterable[dict], session: Session, observer=None, stop=None) -> dict:
+    """Archive first; an optional local observer never waits on browser clients."""
     parser, stats = Parser(), Stats()
     status, error = "completed", None
+    observer_errors = 0
+    def notify(method, value):
+        nonlocal observer_errors
+        if observer is not None:
+            try:
+                getattr(observer, method)(value)
+            except Exception:
+                observer_errors += 1
     try:
         for packet in packets:
             session.packet(packet)
             stats.add_packet(packet)
+            notify('push_packet', packet)
             for record in parser.feed(packet):
                 session.record(record)
                 stats.add_record(record)
+                notify('push_record', record)
+        if stop is not None and stop():
+            status = "interrupted"
     except KeyboardInterrupt:
         status = "interrupted"
     except Exception as exc:
@@ -57,6 +70,8 @@ def process(packets: Iterable[dict], session: Session) -> dict:
                             "pending_bytes": parser.pending_bytes(),
                             "session": str(session.path),
                             "diagnosis": "无法判断故障根因；V0.1 仅统计通信观测。"})
+            if observer is not None:
+                summary['live_observer_errors'] = observer_errors
             session.save_json("reports/summary.json", summary)
         finally:
             session.close()
@@ -77,8 +92,20 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--session", type=Path, required=True)
     analyze.add_argument("--time-axis", choices=("auto", "receive"), default="auto")
     analyze.add_argument("--gap-seconds", type=float, default=0.5)
+    live = commands.add_parser("live", help="loopback-only read-only live Web or timed historical replay")
+    source = live.add_mutually_exclusive_group(required=True)
+    source.add_argument("--config", type=Path)
+    source.add_argument("--replay-session", type=Path)
+    live.add_argument("--web-port", type=int, default=8765)
+    live.add_argument("--speed", type=float, default=1.0, help="historical replay speed multiplier")
+    live.add_argument("--start-delay", type=float, default=1.0, help="seconds before producer starts")
     args = cli.parse_args(argv)
     try:
+        if args.command == "live":
+            from .live.server import run_live
+            return run_live(config=load_config(args.config) if args.config else None,
+                            replay_session=args.replay_session, port=args.web_port,
+                            speed=args.speed, start_delay=args.start_delay)
         if args.command == "analyze":
             from .analysis.report import generate_report
             print(generate_report(args.session, time_axis=args.time_axis, gap_seconds=args.gap_seconds))

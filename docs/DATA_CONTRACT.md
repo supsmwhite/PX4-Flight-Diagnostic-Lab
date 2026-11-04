@@ -91,6 +91,20 @@ SYSTEM_TIME 可同时有 unix 与 boot 两个 sources，仍不自动建立同步
 - HTML每来源五组图，状态与执行状态分离。AVAILABLE_WITH_LIMITATIONS要求各必要曲线至少2条有效样本；否则INSUFFICIENT_DATA。不是医学式置信度、故障分类或飞行许可。
 - `reports/diagnostic.html`首次独占创建；后续为diagnostic-001.html等。JS内嵌，无远程脚本，不修改summary/raw/processed。HTML包含元数据和来源信息，分享前需检查隐私；日志和报告默认忽略Git。
 
+## V0.2+ WebSocket协议 version=1（独立于存档schema）
+
+只读/ws每0.2秒推一个JSON快照，不接受飞控指令。HTTP端没有任意Session文件路径接口。字段：
+
+- `version:1,session,mode`：稳定Session路径字符串及live/replay；切换session前端清空去重与曲线。
+- `state`：WAITING_FOR_DATA（无包）、RECEIVING（近期有效消息）、STALE（有效消息超过stale_seconds默认2秒或仅坏包）、DISCONNECTED（任意包超过disconnect_seconds默认5秒）、COMPLETED、ERROR（终态优先）。阈值可通过LiveBuffer构造参数配置，CLI默认固定；须有限正数且disconnect>=stale。
+- `link_state`独立依据任意包年龄，不受完成覆盖。`last_data_age_s`为任意包年龄，`last_message_age_s`为有效消息年龄，均运行monotonic，未知null。
+- `messages,crc_errors,parse_errors,sequence_candidate_missing`累计计数，不是实测UDP丢包率。`sources`按[IP,port,SYSID,COMPID]隔离，含heartbeat_age_s/heartbeat_state及streams（msg_type/count/frequency_hz/max_gap_s/age_s/state）；频率仍原接收时间累计(N-1)/跨度，非滑动频率。
+- `points:[{id,t,identity,msg_type,sensor,values,target_context}]`仅五组图所需类型。id会话递增，t相对首包接收单调秒，sensor光流为ID、测距为[ID,方向]。values复用field_value（姿态度、测距m、光流rad/µs/quality），非有限/掩码等None编码null；不更改原fields。目标上下文为此前同来源2秒证据时间内的HB，枚举UNKNOWN_OR_STALE/UNKNOWN/DISARMED/ARMED_PX4_MODE_UNCONFIRMED_EXECUTION/MODE_UNCONFIRMED，均不证明目标已执行。
+- `cursor`当前全局点编号，`client_missed`本次游标到当前之间不可用/批次跳过点数（包含正常窗口过期）；`display_dropped`容量/来源限额显示拒绝计数（不含正常窗口到期）；`conversion_errors,stats_limited_records,warnings`明确降级。`finished,error`生产者终态。
+- 硬边界：20000点、64来源、512流、单快照2000点，最近60秒证据/执行窗口；完成冻结末窗。前端最多128trace/每trace12000点，WebSocket最多4客户端，慢发送1秒超时，客户端可重连取得最近批次，不保证恢复完整历史。完整历史应读取存档。
+- live采集metadata保持mode=capture并增加live:true；summary仅live模式新增live_observer_errors，原schema与旧命令不变。观察器错误不取消存档，结束后界面ERROR。时长结束COMPLETED保留服务；Ctrl+C保存interrupted摘要后关闭。发生写盘错误立即ERROR，不宣称完整归档。
+- live回放需要原raw/udp.jsonl，复用原Parser，无UDP监听/设备发送/文件修改；仅Web服务本机网络。speed改变到达调度而非原时间/频率/目标上下文，age采用播放运行时间，慢放STALE不等于原链路故障。
+
 ## 5. 未来 uORB 对照：候选映射，不是严格等价
 
 目前**没有 ULog 读取器、uORB 映射转换器或严格时间对齐**。以下只是未来跨层研究索引；话题名称/结构依 PX4 版本变化，需固定固件提交、消息定义、实例号和发布链路后验证。不能由某条 MAVLink 消息反推全部 uORB 字段。

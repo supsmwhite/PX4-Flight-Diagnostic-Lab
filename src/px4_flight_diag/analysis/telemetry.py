@@ -172,7 +172,12 @@ def _sensor(record: dict) -> Sensor | None:
     return None
 
 
-def _value(record: dict, field: str) -> float | None:
+def field_value(record: dict, field: str) -> float | None:
+    """Shared finite plotting value conversion; attitude radians remain radians.
+
+    Distance is converted to metres and target roll_deg/pitch_deg to degrees.
+    Invalid/masked values are None. No source timestamp is interpreted here.
+    """
     fields = record["fields"]
     msg_type = record["msg_type"]
     if msg_type == "ATTITUDE_TARGET" and field in ("roll_deg", "pitch_deg"):
@@ -202,6 +207,10 @@ def _value(record: dict, field: str) -> float | None:
             return None
         return value / 100.0
     return value
+
+
+# Compatibility for callers of the original private helper.
+_value = field_value
 
 
 def series(
@@ -255,7 +264,7 @@ def series(
             timestamp = finite(timestamp)
         else:
             timestamp = None
-        value = _value(record, field)
+        value = field_value(record, field)
         value = finite(value * scale_value) if value is not None else None
         if timestamp is not None and previous is not None and (timestamp < previous or timestamp - previous > gap):
             x.append(None)

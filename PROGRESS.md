@@ -2,9 +2,9 @@
 
 ## 当前版本与开发阶段
 
-- V0.2.0，离线可视化闭环已实现；2026-11-04 UTC。保留V0.1采集/重放行为及schema 1。
+- V0.2+，实时Web闭环已实现（包版本仍0.2.0）；2026-11-04 UTC。保留V0.1/V0.2命令及schema 1。
 - 独立工程，只读诊断。当前验证层级：合成 MAVLink、本机 UDP 回环及用户提供的机2真实地面静止遥测检查；尚未完成实机飞行或定制固件全部字段语义验证。
-- **2026-11-04 设计决策：MAVLink-first，ULog-on-demand。** 默认优先使用用户此前已验证的 ESP32 + Wi-Fi + MAVLink 链路开展采集、监控、存储及第一轮诊断；本工程的实时监控与专项诊断仍为后续功能。ULog 不要求每次实验导入，只在遥测证据不足时按需补充，不能成为默认使用前置条件。
+- **2026-11-04 设计决策：MAVLink-first，ULog-on-demand。** 默认优先使用用户此前已验证的 ESP32 + Wi-Fi + MAVLink 链路开展采集、监控、存储及第一轮诊断；本工程的实时监控现由V0.2+实现，专项诊断仍为后续功能。ULog 不要求每次实验导入，只在遥测证据不足时按需补充，不能成为默认使用前置条件。
 - V0.1 范围不扩大：可靠原始记录、重放、时间戳与链路统计优先。正常机/异常机对照是重要后续功能；仅保留 ULog、外部视频时间对齐扩展能力，不提前实现复杂融合。
 - 诊断必须报告所需字段、实际有效字段、采样质量、结论可靠性与局限。V0.2已在图表缺失/不足时展示 `INSUFFICIENT_DATA`，说明优先补MAVLink、ULog是否补足需核对话题；未实现自动根因诊断，不与 `completed/interrupted/failed` 执行状态混淆；详见 [架构决策](<ARCHITECTURE.md>)。
 
@@ -18,6 +18,19 @@
 - 接收频率/间隔/心跳、CRC候选错误、序号环绕/缺口/重复/逆序、原始吞吐；不输出伪丢包率。
 - 保守时间规范化；time_usec unknown，不假装已对齐或识别重启。
 - 四份核心文档、两份专项文档及参考研究笔记；合成样例生成器。
+
+## V0.2+ 实时Web实现与软件验收（2026-11-04 UTC）
+
+- 新增live/core.py、server.py、static/index.html、static/app.js和核心/服务测试；复用Parser/Session/Stats/receive_packets，不建第二套协议解析器。telemetry公开field_value，offline/live共享单位/缺测规则。
+- process增加可选观察器：先落盘再通知；观察器错误计数不终止记录。UDP增加可选stop回调，兼容旧调用。live有独立非daemon生产线程与WebSocket客户端，固定本机8765（可换端口，不可暴露主机地址）。
+- live --config保存新Session，时长结束保留Web末窗；live --replay-session读取原raw定时重放，无UDP/设备发送/写文件。原replay仍完全无网络，live回放仅本机Web socket。
+- 后台20000点/64来源/512流、60秒双时间窗、每客户端2000点，前端128trace/12000点；显示丢弃与client_missed独立可见，不解释为真实UDP丢包率。整体/包链路/HB/消息流分别新鲜度，终态保留数据。
+- 新依赖实际安装FastAPI0.162.0、Uvicorn0.54.0、websockets15.0.1，测试httpx0.28.1。最终完整回归150 passed,1 warning in3.09s；pip check通过、compileall/node --check/git diff --check退出0。warning来自Starlette测试客户端提示httpx未来弃用，不影响当前验证；未屏蔽。
+- 测试覆盖合成分发/容量/慢游标/并发快照/单位/来源隔离/心跳上下文/状态转换/定时重放无socket/源不变/WS断开不取消生产/Origin及Host限制/观察器失败归档/本机UDP合成live Session可analyze。未进行长期磁盘/CPU压测或真实飞控控制。
+- 真实历史验收：`env -u PYTHONPATH .venv/bin/python -m px4_flight_diag live --replay-session data/drone2/20261104T030153.373745Z-785100e2 --web-port 8765 --speed 0.5 --start-delay 15`。Chrome CDP实际读取window.__liveDebug：24秒内updates6→117、图样本2252→5832，五组均存在并更新；不是stub截图代替验证。
+- 完成WS实测COMPLETED、messages5249、CRC108、candidate_missing1717、display_dropped0。关闭服务后Chrome实测DISCONNECTED、connected=false、6283个含空值曲线样本保留；服务日志正常application shutdown。验收Web与Chrome已关闭，无残留监听。
+- 最终真实Session raw/processed/metadata/summary四文件SHA256均与V0.2验收记录一致；容量为2点的100条合成姿态归档测试确认显示丢弃98、client_missed98，但100条原始/解析记录全保留且analyze成功。
+- **本轮未连接真实ESP32设备；历史真实日志回放不等于真实在线地面/飞行验收。** 用户下一步在无桨、上锁条件自行授权现场验收。本轮未提交/推送Git。
 
 ## V0.2 实现与实际验收（2026-11-04 UTC）
 
@@ -80,7 +93,7 @@ env -u PYTHONPATH .venv/bin/px4-flight-diag --help
 - 同步flush写盘可能降低吞吐，只有正常关闭fsync；未测内核丢包、断电可靠性或长期负载，peer/stream无全局配额。
 - 频率是累计首末接收窗口而非采样频率；吞吐不含首包前末包后静默。
 - seq跳变无法区分重启、过滤、乱序、网络丢失，不是丢包率。
-- V0.2离线图表已实现；未实现ULog/严格时钟分段对齐/实时图表/根因诊断/双机对照/任何控制功能。
+- V0.2离线图表及V0.2+实时图表已实现；未实现ULog/严格时钟分段对齐/根因诊断/双机对照/任何控制功能。
 - 可视化按内存加载，未做超长日志抽稀/规模资源限制；默认0.5秒断线阈值是显示策略而非传感器健康标准。auto不同图可能不同时间域，应使用receive显式统一轴，仍不能毫秒级因果判断。
 
 ## 下一步最重要的三个任务
